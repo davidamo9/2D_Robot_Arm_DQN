@@ -2,7 +2,8 @@
 NUS ME5406 Final Project
 
 ## testing code
-'''
+activate python env: source .env/bin/activate
+```
 #!/usr/bin/env python3
 
 import gym
@@ -28,4 +29,4 @@ while True:
     time.sleep(0.1)
 
 env.close()
-'''
+```
