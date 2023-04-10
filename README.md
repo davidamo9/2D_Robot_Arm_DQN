@@ -3,7 +3,6 @@ NUS ME5406 Final Project
 
 ## testing code
 '''
-{
 #!/usr/bin/env python3
 
 import gym
@@ -29,5 +28,4 @@ while True:
     time.sleep(0.1)
 
 env.close()
-}
 '''
