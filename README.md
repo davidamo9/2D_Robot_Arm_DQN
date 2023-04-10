@@ -13,10 +13,9 @@ import time
 env = gym.make('Arm_2D')
 
 state = env.reset()
+env.render(mode='human')
 
 while True:
-    
-    env.render()
     
     action = env.action_space.sample()
     
