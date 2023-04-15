@@ -16,18 +16,16 @@ class Arm_2D(gym.Env):
     def __init__(self):
             self.set_window_size([600,600])
             self.set_link_properties([100,100])
-            self.set_increment_rate(0.1)
+            self.set_increment_rate(0.2)
             self.target_pos = self.generate_random_pos()
             self.PnP_action = 0
-            self.action = {0: "PICK",
-                           1: "PLACE",
-                           2: "INC_J1",
-                           3: "DEC_J1",
-                           4: "INC_J2",
-                           5: "DEC_J2"}
+            self.action = {0: "INC_J1",
+                           1: "DEC_J1",
+                           2: "INC_J2",
+                           3: "DEC_J2"}
             
-            # observation: [target_pos_x, target_pos_y, joint_1_theta, joint_2_theta, target_tip_dis_x, target_tip_dis_y, goal_tip_dis_x, goal_tip_dis_y, PnP_action]
-            self.observation_space = spaces.Box(np.finfo(np.float32).min, np.finfo(np.float32).max, shape=(9,), dtype=np.float32)
+            # observation: [joint_1_theta, joint_2_theta, target_tip_dis_x, target_tip_dis_y, goal_tip_dis_x, goal_tip_dis_y, PnP_action]
+            self.observation_space = spaces.Box(np.finfo(np.float32).min, np.finfo(np.float32).max, shape=(7,), dtype=np.float32)
             self.action_space = spaces.Discrete(len(self.action))
 
             self.current_error = -math.inf
@@ -65,6 +63,12 @@ class Arm_2D(gym.Env):
         theta = self.generate_random_angle()        # random angle that the arm can reach
         P = self.forward_kinematics(theta)          # calculate the position from angle
         pos = np.array([P[-1][0,3], P[-1][1,3]])    # get the x, y in the matrix
+        while not (-150 < pos[0] < 150 and 100 < pos[1] < 200):  # while pos is not within the assembly line area
+            new_seed = self.seed()[0]                           # generate a new seed
+            self.seed(new_seed)                                 # set the new seed for the env
+            theta = self.generate_random_angle()                # random angle that the arm can reach
+            P = self.forward_kinematics(theta)                  # calculate the position from angle
+            pos = np.array([P[-1][0,3], P[-1][1,3]])            # get the x,y in the matrix
         return pos
     
 
@@ -132,7 +136,7 @@ class Arm_2D(gym.Env):
         base = origin.dot(origin_to_base)
         base_to_target = self.translate(self.target_pos[0], -self.target_pos[1], 0)
         target = base.dot(base_to_target)
-        pygame.draw.circle(self.screen, TARGET_COLOR, (int(target[0,3]),int(target[1,3])), 12)
+        pygame.draw.circle(self.screen, TARGET_COLOR, (int(target[0,3]),int(target[1,3])), 20)
 
 
     def draw_assembly_line(self):
@@ -160,20 +164,16 @@ class Arm_2D(gym.Env):
     def step(self, action):
         if self.action[action] == "INC_J1":
             self.theta[0] += self.rate
-            print("J1+")
+            print("Action: ","J1+")
         elif self.action[action] == "DEC_J1":
             self.theta[0] -= self.rate
-            print("J1-")
+            print("Action: ","J1-")
         elif self.action[action] == "INC_J2":
             self.theta[1] += self.rate 
-            print("J2+")
+            print("Action: ","J2+")
         elif self.action[action] == "DEC_J2":
             self.theta[1] -= self.rate
-            print("J2-")
-        elif self.action[action] == "PICK":
-            self.PnP_action = 1
-        elif self.action[action] == "PLACE":
-            self.PnP_action = 0
+            print("Action: ","J2-")
 
         self.theta[0] = np.clip(self.theta[0], self.min_theta, self.max_theta)
         self.theta[1] = np.clip(self.theta[1], self.min_theta, self.max_theta)
@@ -183,24 +183,6 @@ class Arm_2D(gym.Env):
         # Calc reward
         P = self.forward_kinematics(self.theta)
         tip_pos = [P[-1][0,3], P[-1][1,3]]
-        distance_error = euclidean(self.target_pos, tip_pos)
-
-        reward = 0
-        if distance_error >= self.current_error:
-            reward = -1
-        epsilon = 10
-        if (distance_error > -epsilon and distance_error < epsilon):
-            reward = 1
-
-        self.current_error = distance_error
-        self.current_score += reward
-
-        print(self.current_score)
-
-        if self.current_score == -10 or self.current_score == 10:
-            done = True
-        else:
-            done = False
 
         target_tip_dis_x = self.target_pos[0] - tip_pos[0]
         target_tip_dis_y = self.target_pos[1] - tip_pos[1]
@@ -208,11 +190,55 @@ class Arm_2D(gym.Env):
         goal_tip_dis_x = 150 - tip_pos[0]
         goal_tip_dis_y = 0 - tip_pos[1]
 
-        observation = np.hstack((self.target_pos, self.theta, target_tip_dis_x, target_tip_dis_y, goal_tip_dis_x, goal_tip_dis_y, self.PnP_action))
+        dis_err_target = euclidean(self.target_pos, tip_pos)
+        dis_err_goal = euclidean([150, 0], tip_pos)
+
+        # The arm is looking for the target, PnP_action is 0 now
+        if self.PnP_action == 0:
+            reward = 0.1      # If approaching the target, give a small reward
+
+            if dis_err_target >= self.current_error:    # If far from the target, give a penalty
+                reward = -0.5
+
+            close_enough = 20
+            if abs(dis_err_target) < close_enough:      # If reach to target, give large reward, set PnP_action to 1
+                reward = 5
+                self.PnP_action = 1
+
+            self.current_error = dis_err_target         # Update current error
+
+         # The arm is looking for the goal, PnP_action is 1 now
+        elif self.PnP_action == 1:
+            reward = 0.1     # If approaching the goal, give a small reward
+
+            if dis_err_goal >= self.current_error:      # If far from the goal, give a penalty
+                reward = -0.5
+
+            close_enough = 50 
+            if abs(dis_err_goal) < close_enough:        # If reach to goal, give large reward, set done flag
+                reward = 10
+                done = True
+
+            self.current_error = dis_err_goal           # Update current error
+
+
+        self.current_score += reward    # Accumulative reward
+
+        print("Current score : ", self.current_score)
+
+        if self.current_score == -100 or self.current_score == 100:     # Finish an epoch if accumulative reward is too small
+            done = True
+        else:
+            done = False
+
+        observation = np.hstack((self.theta, target_tip_dis_x, target_tip_dis_y, goal_tip_dis_x, goal_tip_dis_y, self.PnP_action))
+
         info = {
-            'distance_error': distance_error,
+            'dis_err_target': dis_err_target,
+            'dis_err_goal': dis_err_goal,
             'target_position': self.target_pos,
             'current_position': tip_pos,
+            'theta': self.theta,
             'target_tip_dis_x': target_tip_dis_x,
             'target_tip_dis_y': target_tip_dis_y,
             'goal_tip_dis_x': goal_tip_dis_x,
@@ -234,7 +260,9 @@ class Arm_2D(gym.Env):
         goal_tip_dis_x = 150 - tip_pos[0]
         goal_tip_dis_y = 0 - tip_pos[1]
 
-        observation = np.hstack((self.target_pos, self.theta, target_tip_dis_x, target_tip_dis_y, goal_tip_dis_x, goal_tip_dis_y, self.PnP_action))
+        self.PnP_action = 0
+
+        observation = np.hstack((self.theta, target_tip_dis_x, target_tip_dis_y, goal_tip_dis_x, goal_tip_dis_y, self.PnP_action))
         return observation
 
 
