@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 import gym
-import arm_v0
+import arm_2D
 import time
 import pygame
 
-env = gym.make('Arm_2D')
+env = arm_2D.Arm_2D()
 
 observation = env.reset()
 
