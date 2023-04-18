@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import gym
 import arm_2D
 import time
